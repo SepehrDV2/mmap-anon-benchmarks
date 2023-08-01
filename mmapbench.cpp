@@ -57,7 +57,7 @@ uint64_t readTLBShootdownCount() {
 }
 
 uint64_t readIObytesOne() {
-  std::ifstream stat("/sys/block/nvme8c8n1/stat");
+  std::ifstream stat("/sys/block/nvme0n1/nvme0n1p2");
   assert (!!stat);
 
   for (std::string line; std::getline(stat, line); ) {
@@ -77,7 +77,7 @@ uint64_t readIObytes() {
 
   uint64_t sum = 0;
   for (std::string line; std::getline(stat, line); ) {
-    if (line.find("nvme") != std::string::npos) {
+    if (line.find("nvme0n1p2") != std::string::npos) {
       std::vector<std::string> strs;
       boost::split(strs, line, boost::is_any_of("\t "), boost::token_compress_on);
 
@@ -93,7 +93,7 @@ uint64_t readIObytes() {
 
 int main(int argc, char** argv) {
   if (argc < 5) {
-    cerr << "dev threads seq hint" << endl;
+    cerr << "dev threads seq hint hugepage write" << endl;
     return 1;
   }
 
@@ -107,9 +107,11 @@ int main(int argc, char** argv) {
   //uint64_t fileSize = static_cast<uint64_t>(sb.st_size);
   //if (fileSize == 0) ioctl(fd, BLKGETSIZE64, &fileSize);
 
-  uint64_t fileSize = 2ull * 1024 * 1024 * 1024 * 1024;
+  uint64_t fileSize = 64ull * 1024 * 1024 * 1024;
 
-  char* p = (char*)mmap(nullptr, fileSize, PROT_READ, MAP_SHARED, fd, 0);
+  //char* p = (char*)mmap(nullptr, fileSize, PROT_READ, MAP_SHARED, fd, 0);
+  char* p = (char*)mmap(nullptr, fileSize, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+  
   assert(p != MAP_FAILED);
 
   int hint = (argc > 4) ? atoi(argv[4]) : 0;
@@ -117,8 +119,15 @@ int main(int argc, char** argv) {
     madvise(p, fileSize, MADV_RANDOM);
   else if (hint == 2)
     madvise(p, fileSize, MADV_SEQUENTIAL);
-  else
-    madvise(p, fileSize, MADV_NORMAL);
+  //else
+  // madvise(p, fileSize, MADV_NORMAL);
+
+  int do_hpage = (argc > 5) ? atoi(argv[5]) : 0;
+  if (do_hpage == 1)
+    madvise(p, fileSize, MADV_HUGEPAGE);
+  
+  int do_update = (argc > 6) ? atoi(argv[6]) : 0;
+  
 
   int seq = (argc > 3) ? atoi(argv[3]) : 0;
    
@@ -127,6 +136,7 @@ int main(int argc, char** argv) {
 
   atomic<uint64_t> seqScanPos(0);
 
+  
   vector<thread> t;
   for (unsigned i=0; i<threads; i++) {
     t.emplace_back([&]() {
@@ -138,8 +148,14 @@ int main(int argc, char** argv) {
 	  uint64_t scanBlock = 128*1024*1024;
 	  uint64_t pos = (seqScanPos += scanBlock) % fileSize;
 
-	  for (uint64_t j=0; j<scanBlock; j+=4096) {
-	    sum += p[pos + j];
+	  for (uint64_t j=0; j<scanBlock; j+=16) { // what would be the correct step?
+      uint64_t tmp;
+	    tmp = p[pos+j];
+      sum += tmp;
+      if(do_update){
+        tmp += j;
+        p[pos+j] += tmp;
+      }
 	    count++;
 	  }
 	}
@@ -149,7 +165,14 @@ int main(int argc, char** argv) {
 	std::uniform_int_distribution<uint64_t> rnd(0, fileSize);
 
 	while (true) {
-	  sum += p[rnd(gen)];
+    uint64_t tmp;
+    uint64_t rand_adr = rnd(gen);
+    tmp = p[rand_addr];
+	  sum += tmp;
+    if(do_update){
+      tmp+=j;
+      p[rand_addr] = tmp;
+    }
 	  count++;
 	}
       }
