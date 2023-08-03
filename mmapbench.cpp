@@ -29,6 +29,9 @@ using namespace std;
 
 #define check(expr) if (!(expr)) { perror(#expr); throw; }
 
+#define UPJUMP  4096
+#define HUGEPAGE_SIZE 	(2UL * 1024UL * 1024UL)
+
 double gettime() {
   struct timeval now_tv;
   gettimeofday (&now_tv,NULL);
@@ -97,13 +100,13 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  int fd = open(argv[1], O_RDONLY);
-  check(fd != -1);
+  //int fd = open(argv[1], O_RDONLY);
+  //check(fd != -1);
 
   unsigned threads = atoi(argv[2]);
 
-  struct stat sb;
-  check(stat(argv[1], &sb) != -1);
+  //struct stat sb;
+  //check(stat(argv[1], &sb) != -1);
   //uint64_t fileSize = static_cast<uint64_t>(sb.st_size);
   //if (fileSize == 0) ioctl(fd, BLKGETSIZE64, &fileSize);
 
@@ -113,6 +116,8 @@ int main(int argc, char** argv) {
   char* p = (char*)mmap(nullptr, fileSize, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
   
   assert(p != MAP_FAILED);
+
+  memset(p, 1, fileSize);
 
   int hint = (argc > 4) ? atoi(argv[4]) : 0;
   if (hint == 1)
@@ -148,7 +153,7 @@ int main(int argc, char** argv) {
 	  uint64_t scanBlock = 128*1024*1024;
 	  uint64_t pos = (seqScanPos += scanBlock) % fileSize;
 
-	  for (uint64_t j=0; j<scanBlock; j+=16) { // what would be the correct step?
+	  for (uint64_t j=0; j<scanBlock; j+=UPJUMP) { // what would be the correct step?
       uint64_t tmp;
 	    tmp = p[pos+j];
       sum += tmp;
@@ -160,21 +165,28 @@ int main(int argc, char** argv) {
 	  }
 	}
       } else {
-	std::random_device rd;
+	uint64_t updateBlock = 2*1024*1024;
+    
+  std::random_device rd;
 	std::mt19937 gen(rd());
-	std::uniform_int_distribution<uint64_t> rnd(0, fileSize);
+	std::uniform_int_distribution<uint64_t> rnd(0, fileSize - updateBlock);
 
 	while (true) {
     uint64_t tmp;
-    uint64_t rand_adr = rnd(gen);
-    tmp = p[rand_addr];
-	  sum += tmp;
-    if(do_update){
-      tmp+=j;
-      p[rand_addr] = tmp;
-    }
-	  count++;
-	}
+    uint64_t rand_addr = rnd(gen);
+    rand_addr = rand_addr - (rand_addr % HUGEPAGE_SIZE);
+    for (uint64_t j=0; j<updateBlock; j+=UPJUMP) { // what would be the correct step?
+    
+      tmp = p[rand_addr+j];
+
+      sum += tmp;
+      if(do_update){
+        tmp+=j;
+        p[rand_addr+j] = tmp;
+      }
+      count++;
+	  }
+  }
       }
     });
   }
@@ -190,7 +202,7 @@ int main(int argc, char** argv) {
     }
   });
 
-  cout << "dev,seq,hint,threads,time,workGB,tlb,readGB,CPUwork" << endl;
+  cout << "dev,seq,hint,threads,time,workGB,tlb,readGB,CPUwork, Updates" << endl;
   auto lastShootdowns = readTLBShootdownCount();
   auto lastIObytes = readIObytes();
   double start = gettime();
@@ -202,7 +214,7 @@ int main(int argc, char** argv) {
     for (auto& x : counts)
       workCount += x.exchange(0);
     double t = gettime() - start;
-    cout << argv[1] << "," << seq << "," << hint << "," << threads  << "," << t << "," << (workCount*4096)/(1024.0*1024*1024) << "," << (shootdowns - lastShootdowns) << "," << (IObytes-lastIObytes)/(1024.0*1024*1024) << "," << cpuWork.exchange(0) << endl;
+    cout << argv[1] << "," << seq << "," << hint << "," << threads  << "," << t << "," << (workCount*4096)/(1024.0*1024*1024) << "," << (shootdowns - lastShootdowns) << "," << (IObytes-lastIObytes)/(1024.0*1024*1024) << "," << cpuWork.exchange(0) << "," << workCount*UPJUMP<< endl;
     lastShootdowns = shootdowns;
     lastIObytes = IObytes;
   }
