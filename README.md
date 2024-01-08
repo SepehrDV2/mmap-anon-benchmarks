@@ -10,3 +10,6 @@ g++ -O3 -g mmapbench.cpp -o mmapbench -ltbb -pthread
 running:
 
 ./mmapbench device num_threads seq/rand hint
+
+running for extmem:
+./mmapbench device num_threads seq/rand/rand_hotset hint hugepage write
