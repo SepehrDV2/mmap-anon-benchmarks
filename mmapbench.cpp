@@ -60,7 +60,7 @@ uint64_t readTLBShootdownCount() {
 }
 
 uint64_t readIObytesOne() {
-  std::ifstream stat("/sys/block/nvme0n1/nvme0n1p2");
+  std::ifstream stat("/sys/block/nvme1n1/nvme1n1p2");
   assert (!!stat);
 
   for (std::string line; std::getline(stat, line); ) {
@@ -96,7 +96,7 @@ uint64_t readIObytes() {
 
 int main(int argc, char** argv) {
   if (argc < 5) {
-    cerr << "dev threads seq hint hugepage write" << endl;
+    cerr << "dev threads seq/rand hint hugepage write" << endl;
     return 1;
   }
 
@@ -113,7 +113,8 @@ int main(int argc, char** argv) {
   uint64_t fileSize = 64ull * 1024 * 1024 * 1024;
 
   //char* p = (char*)mmap(nullptr, fileSize, PROT_READ, MAP_SHARED, fd, 0);
-  char* p = (char*)mmap(nullptr, fileSize, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+  //char* p = (char*)mmap(nullptr, fileSize, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+  char* p = (char*)mmap(nullptr, fileSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   
   assert(p != MAP_FAILED);
 
@@ -132,10 +133,19 @@ int main(int argc, char** argv) {
     madvise(p, fileSize, MADV_HUGEPAGE);
   
   int do_update = (argc > 6) ? atoi(argv[6]) : 0;
-  
+  int do_hotset = 0, seq = 0;
 
-  int seq = (argc > 3) ? atoi(argv[3]) : 0;
+  int mode = (argc > 3) ? atoi(argv[3]) : 0;
    
+   if(mode == 0){
+    seq = 1;
+   }
+   else{
+    seq = 0;
+    if(mode == 2){
+      do_hotset = 1;
+    }
+   }
   tbb::enumerable_thread_specific<atomic<uint64_t>> counts;
   tbb::enumerable_thread_specific<atomic<uint64_t>> sums;
 
@@ -168,13 +178,22 @@ int main(int argc, char** argv) {
 	uint64_t updateBlock = 2*1024*1024;
     
   std::random_device rd;
-	std::mt19937 gen(rd());
+	std::random_device rd_top;
+  std::mt19937 gen(rd());
+	std::mt19937 gen_top(rd());
 	std::uniform_int_distribution<uint64_t> rnd(0, fileSize - updateBlock);
+  std::uniform_int_distribution<uint64_t> rnd_top(0, 100);
 
 	while (true) {
     uint64_t tmp;
+    uint64_t hotset_hit = rnd_top(gen_top);
     uint64_t rand_addr = rnd(gen);
-    rand_addr = rand_addr - (rand_addr % HUGEPAGE_SIZE);
+
+    if(hotset_hit < 90 && do_hotset){
+      rand_addr = rand_addr % (fileSize / 10);
+    }
+    
+    rand_addr = rand_addr;
     for (uint64_t j=0; j<updateBlock; j+=UPJUMP) { // what would be the correct step?
     
       tmp = p[rand_addr+j];
