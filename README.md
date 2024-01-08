@@ -1,7 +1,7 @@
 # mmap Benchmark
 
 
-Basic mmap performance microbecnhmarks derived from the CIDR 2022 paper "Are You Sure You Want to Use MMAP in Your Database Management System?" by Andrew Crotty, Viktor Leis, and Andrew Pavlo
+Basic mmap performance microbecnhmarks derived from the CIDR 2022 paper by Andrew Crotty, Viktor Leis, and Andrew Pavlo
 
 Building:
 
