@@ -1,7 +1,7 @@
 # mmap Benchmark
 
 
-Basic mmap performance microbecnhmarks derived from the CIDR 2022 paper by Andrew Crotty, Viktor Leis, and Andrew Pavlo
+Basic mmap performance microbenchmarks derived from the CIDR 2022 paper by Andrew Crotty, Viktor Leis, and Andrew Pavlo
 
 Building:
 
